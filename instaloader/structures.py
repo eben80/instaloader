@@ -1081,21 +1081,22 @@ class Profile:
         try:
             if not self._has_full_metadata:
                 if not self._context.is_logged_in:
-                    # Anonymous access: the web_profile_info endpoint returns the full
-                    # node in the legacy format and still works, unlike the GraphQL
-                    # profile query.
+                    # Anonymous access: use get_page_data as an alternative to web_profile_info
+                    # to mitigate 429 Too Many Requests errors.
                     try:
-                        data = self._context.get_json(
-                            "api/v1/users/web_profile_info/",
-                            params={"username": self.username},
-                        ).get('data')
+                        page = self._context.get_page_data("{0}/".format(self.username.lower()))
                     except QueryReturnedNotFoundException as err:
                         raise ProfileNotExistsException(
                             'Profile {} does not exist.'.format(self.username)) from err
-                    user_data = data.get('user') if data else None
-                    if user_data is None:
+                    user_data: Dict[str, Any] = {}
+                    for data in page:
+                        user_data.update(data.get("xig_user_by_username") or {})
+                    if not user_data.get("pk") and not user_data.get("id"):
                         raise ProfileNotExistsException('Profile {} does not exist.'.format(self.username))
-                    self._node = user_data
+                    user_data.pop("polaris_ordered_timeline_connection", None)
+                    if "pk" in user_data and "id" not in user_data:
+                        user_data["id"] = user_data["pk"]
+                    self._node = self._normalize_profile_data(user_data)
                     self._has_full_metadata = True
                     return
                 user_id = self._node.get('id') or self._node.get('pk')
