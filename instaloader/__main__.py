@@ -129,6 +129,24 @@ def import_session(browser: str, instaloader: Instaloader, cookiefile: Optional[
         print(f"Next time use --login={username} to reuse the same session.")
 
 
+def import_cookiefile(cookiefile: str, instaloader: Instaloader):
+    import http.cookiejar
+    cj = http.cookiejar.MozillaCookieJar(cookiefile)
+    try:
+        cj.load(ignore_discard=True, ignore_expires=True)
+    except Exception as err:
+        raise InvalidArgumentException(f"Failed to load cookie file '{cookiefile}': {err}") from err
+    cookies = {cookie.name: cookie.value for cookie in cj if 'instagram' in cookie.domain or not cookie.domain}
+    if not cookies:
+        raise LoginException(f"No Instagram cookies found in cookie file '{cookiefile}'.")
+    instaloader.context.update_cookies(cookies)
+    username = instaloader.test_login()
+    if not username:
+        raise LoginException(f"Not logged in. Valid session cookies not found in '{cookiefile}'.")
+    instaloader.context.username = username
+    print(f"{username} has been successfully logged in from cookie file '{cookiefile}'.")
+
+
 def _main(instaloader: Instaloader, targetlist: List[str],
           username: Optional[str] = None, password: Optional[str] = None,
           sessionfile: Optional[str] = None,
@@ -158,11 +176,13 @@ def _main(instaloader: Instaloader, targetlist: List[str],
     if latest_stamps_file is not None:
         latest_stamps = LatestStamps(latest_stamps_file)
         instaloader.context.log(f"Using latest stamps from {latest_stamps_file}.")
-    # load cookies if browser is not None
+    # load cookies if browser is not None or cookiefile is provided
     if browser and bc3_library:
         import_session(browser.lower(), instaloader, cookiefile)
     elif browser and not bc3_library:
         raise InvalidArgumentException("browser_cookie3 library is needed to load cookies from browsers")
+    elif cookiefile and not browser:
+        import_cookiefile(cookiefile, instaloader)
     # Login, if desired
     if username is not None:
         if not re.match(r"^[A-Za-z0-9._]+$", username):
