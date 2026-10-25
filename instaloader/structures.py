@@ -1080,40 +1080,40 @@ class Profile:
     def _obtain_metadata(self):
         try:
             if not self._has_full_metadata:
-                if not self._context.is_logged_in:
-                    # Anonymous access: the web_profile_info endpoint returns the full
-                    # node in the legacy format and still works, unlike the GraphQL
-                    # profile query.
+                user_data: Dict[str, Any] = {}
+                if self._context.is_logged_in:
+                    user_id = self._node.get('id') or self._node.get('pk')
+                    variables = {
+                        "id": str(user_id),
+                        "render_surface": "PROFILE",
+                        "__relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider": True,
+                        "__relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider": False,
+                        "__relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider": False,
+                        "__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider": False,
+                        "enable_integrity_filters": True,
+                    }
                     try:
-                        data = self._context.get_json(
-                            "api/v1/users/web_profile_info/",
-                            params={"username": self.username},
-                        ).get('data')
+                        data = self._context.doc_id_graphql_query('27937681195819736', variables)
+                        if data and data.get('data', {}).get('user'):
+                            user_data = data['data']['user']
+                    except Exception as err:
+                        self._context.error(f"GraphQL profile query failed ({err}); falling back to page data.")
+
+                if not user_data:
+                    # Fallback to get_page_data to mitigate GraphQL 401/429 errors
+                    try:
+                        page = self._context.get_page_data("{0}/".format(self.username.lower()))
                     except QueryReturnedNotFoundException as err:
                         raise ProfileNotExistsException(
                             'Profile {} does not exist.'.format(self.username)) from err
-                    user_data = data.get('user') if data else None
-                    if user_data is None:
+                    for data in page:
+                        user_data.update(data.get("xig_user_by_username") or {})
+                    if not user_data.get("pk") and not user_data.get("id"):
                         raise ProfileNotExistsException('Profile {} does not exist.'.format(self.username))
-                    self._node = user_data
-                    self._has_full_metadata = True
-                    return
-                user_id = self._node.get('id') or self._node.get('pk')
-                variables = {
-                    "id": str(user_id),
-                    "render_surface": "PROFILE",
-                    "__relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider": True,
-                    "__relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider": False,
-                    "__relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider": False,
-                    "__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider": False,
-                    "enable_integrity_filters": True,
-                }
-                data = self._context.doc_id_graphql_query('27937681195819736', variables)
-                if data is None:
-                    raise QueryReturnedNotFoundException('GraphQL query returned None')
-                user_data = data.get('data', {}).get('user')
-                if user_data is None:
-                    raise ProfileNotExistsException('Profile {} does not exist.'.format(self.username))
+                    user_data.pop("polaris_ordered_timeline_connection", None)
+                    if "pk" in user_data and "id" not in user_data:
+                        user_data["id"] = user_data["pk"]
+
                 self._node = self._normalize_profile_data(user_data)
                 self._has_full_metadata = True
         except (QueryReturnedNotFoundException, KeyError) as err:
@@ -1135,8 +1135,11 @@ class Profile:
         normalized = user_data.copy()
         if 'id' not in normalized and 'pk' in normalized:
             normalized['id'] = normalized['pk']
-        if 'edge_owner_to_timeline_media' not in normalized and 'media_count' in normalized:
-            normalized['edge_owner_to_timeline_media'] = {'count': normalized['media_count']}
+        if 'edge_owner_to_timeline_media' not in normalized:
+            count = normalized.get('media_count', 0)
+            normalized['edge_owner_to_timeline_media'] = {'count': count, 'edges': []}
+        elif 'edges' not in normalized['edge_owner_to_timeline_media']:
+            normalized['edge_owner_to_timeline_media']['edges'] = []
         if 'edge_felix_video_timeline' not in normalized:
             normalized['edge_felix_video_timeline'] = {'count': 0}
         if 'edge_followed_by' not in normalized and 'follower_count' in normalized:
