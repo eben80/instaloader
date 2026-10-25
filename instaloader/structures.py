@@ -1136,8 +1136,9 @@ class Profile:
         normalized = user_data.copy()
         if 'id' not in normalized and 'pk' in normalized:
             normalized['id'] = normalized['pk']
-        if 'edge_owner_to_timeline_media' not in normalized and 'media_count' in normalized:
-            normalized['edge_owner_to_timeline_media'] = {'count': normalized['media_count']}
+        if 'edge_owner_to_timeline_media' not in normalized:
+            count = normalized.get('media_count', 0)
+            normalized['edge_owner_to_timeline_media'] = {'count': count}
         if 'edge_felix_video_timeline' not in normalized:
             normalized['edge_felix_video_timeline'] = {'count': 0}
         if 'edge_followed_by' not in normalized and 'follower_count' in normalized:
