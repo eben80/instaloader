@@ -1138,7 +1138,9 @@ class Profile:
             normalized['id'] = normalized['pk']
         if 'edge_owner_to_timeline_media' not in normalized:
             count = normalized.get('media_count', 0)
-            normalized['edge_owner_to_timeline_media'] = {'count': count}
+            normalized['edge_owner_to_timeline_media'] = {'count': count, 'edges': []}
+        elif 'edges' not in normalized['edge_owner_to_timeline_media']:
+            normalized['edge_owner_to_timeline_media']['edges'] = []
         if 'edge_felix_video_timeline' not in normalized:
             normalized['edge_felix_video_timeline'] = {'count': 0}
         if 'edge_followed_by' not in normalized and 'follower_count' in normalized:
